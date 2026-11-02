@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+dist/
+.DS_Store
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+Sources/Drift/Resources/*.mp4
+Sources/Drift/Resources/*.png

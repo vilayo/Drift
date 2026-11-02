@@ -1,0 +1,21 @@
+name: macOS build and tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test power policy and desktop coverage
+        run: swift test --jobs 2
+      - name: Build app
+        run: bash scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drift-macOS
+          path: dist/Drift-macOS.zip
+          retention-days: 14

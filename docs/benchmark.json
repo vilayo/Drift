@@ -1,0 +1,37 @@
+{
+  "macOS": "Version 26.6.2 (Build 25G83)",
+  "media": "Quiet Current, 1280x720 H.264, 15 fps",
+  "samples": [
+    {
+      "cpu_percent_one_core": 0.2024380008624713,
+      "decoder_present": false,
+      "frame_rendered": false,
+      "phase": "wallpaper_off",
+      "physical_footprint_mb": 11.282051086425781,
+      "resident_mb": 55.125,
+      "seconds": 10.499510916648433
+    },
+    {
+      "cpu_percent_one_core": 1.4403897646589083,
+      "decoder_present": true,
+      "frame_rendered": true,
+      "phase": "playing",
+      "physical_footprint_mb": 18.094573974609375,
+      "resident_mb": 58.921875,
+      "seconds": 20.06810983334435
+    },
+    {
+      "cpu_percent_one_core": 0.01242906962708181,
+      "decoder_present": false,
+      "frame_rendered": false,
+      "phase": "paused_decoder_released",
+      "physical_footprint_mb": 17.844573974609375,
+      "resident_mb": 59.4375,
+      "seconds": 10.499579125025775
+    }
+  ],
+  "scope": "Drift process CPU and memory only; excludes GPU, WindowServer, and system decoder services.",
+  "test_date": "2026-11-01 (America/New_York)",
+  "hardware": "Apple M2 MacBook Air, 8 GiB RAM",
+  "configuration": "Release build, settings window closed, single display; isolated engine benchmark with coverage polling disabled."
+}
