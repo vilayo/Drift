@@ -10,7 +10,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Test power policy and desktop coverage
+      - name: Test power policy, desktop coverage, and video quality
         run: swift test --jobs 2
       - name: Build app
         run: bash scripts/build-app.sh

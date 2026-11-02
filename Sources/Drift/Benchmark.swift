@@ -26,17 +26,23 @@ final class Benchmark {
     private let engine: WallpaperEngine
     private let store: LibraryStore
     private let screen: NSScreen
+    private let movieURL: URL
+    private let posterURL: URL
+    private let mediaDescription: String
     private var reports: [[String: Any]] = []
 
-    init(engine: WallpaperEngine, store: LibraryStore, screen: NSScreen) {
+    init(engine: WallpaperEngine, store: LibraryStore, screen: NSScreen, movieURL: URL? = nil) {
         self.engine = engine; self.store = store; self.screen = screen
+        self.movieURL = movieURL ?? store.movieURL(for: store.selected)
+        posterURL = store.posterURL(for: store.selected)
+        mediaDescription = movieURL?.lastPathComponent ?? "\(store.selected.title), \(store.selected.detail)"
     }
 
     func run(completion: @escaping () -> Void) {
-        print("BENCHMARK_START · release app only · one built-in 720p/15fps wallpaper"); fflush(stdout)
+        print("BENCHMARK_START · release app only · \(mediaDescription)"); fflush(stdout)
         measure("wallpaper_off", seconds: 10) { [self] in
-            engine.show(posterURL: store.posterURL(for: .quietCurrent), on: screen)
-            engine.play(url: store.movieURL(for: .quietCurrent))
+            engine.show(posterURL: posterURL, on: screen)
+            engine.play(url: movieURL)
             // Let AVFoundation initialize before the steady playback sample.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [self] in
                 measure("playing", seconds: 20) { [self] in
@@ -46,7 +52,7 @@ final class Benchmark {
                             engine.stop()
                             let report: [String: Any] = ["samples": reports,
                                 "scope": "Drift process CPU and memory only; excludes GPU, WindowServer, and system decoder services.",
-                                "media": "Quiet Current, 1280x720 H.264, 15 fps",
+                                "media": mediaDescription,
                                 "macOS": ProcessInfo.processInfo.operatingSystemVersionString]
                             let data = try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
                             print("BENCHMARK_JSON\n" + String(decoding: data, as: UTF8.self)); fflush(stdout)
@@ -65,6 +71,9 @@ final class Benchmark {
             let elapsed = ProcessInfo.processInfo.systemUptime - start
             let cpu = (ProcessSample.cpuSeconds() - cpuStart) / elapsed * 100
             let memory = ProcessSample.memory()
+            if phase == "playing" && !engine.hasRenderedFrame {
+                fputs("BENCHMARK_FAIL no rendered video frame\n", stderr); exit(1)
+            }
             reports.append(["phase": phase, "seconds": elapsed, "cpu_percent_one_core": cpu,
                 "resident_mb": Double(memory.resident) / 1_048_576,
                 "physical_footprint_mb": Double(memory.footprint) / 1_048_576,

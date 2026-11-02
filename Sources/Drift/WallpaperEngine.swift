@@ -76,8 +76,6 @@ final class WallpaperEngine {
         }
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 1
-        item.preferredPeakBitRate = 3_000_000
-        item.preferredMaximumResolution = CGSize(width: 1280, height: 720)
         let queue = AVQueuePlayer()
         queue.isMuted = true
         queue.volume = 0

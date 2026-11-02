@@ -8,6 +8,9 @@ output_dir="$(cd "$output_dir" && pwd)"
 if [[ ! -f Sources/Drift/Resources/quiet-current.mp4 || ! -f Sources/Drift/Resources/quiet-current.png ]]; then
     xcrun swift scripts/generate-demo.swift Sources/Drift/Resources
 fi
+if [[ ! -f Sources/Drift/Resources/quiet-current-1080p60.mp4 ]]; then
+    xcrun swift scripts/generate-demo.swift Sources/Drift/Resources --smooth
+fi
 swift build -c release --jobs 2
 bin_dir="$(swift build -c release --show-bin-path)"
 app_dir="$output_dir/Drift.app"

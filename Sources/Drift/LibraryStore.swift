@@ -9,7 +9,7 @@ struct Wallpaper: Codable, Equatable {
     var posterFilename: String
     var width: Int
     var height: Int
-    var framesPerSecond: Int
+    var framesPerSecond: Double
     var duration: Double
     var isBuiltIn: Bool = false
 
@@ -18,7 +18,16 @@ struct Wallpaper: Codable, Equatable {
         posterFilename: "quiet-current.png", width: 1280, height: 720, framesPerSecond: 15, duration: 12,
         isBuiltIn: true
     )
-    var detail: String { "\(width) × \(height)  ·  \(framesPerSecond) fps  ·  silent loop" }
+    static let quietCurrentSmooth = Wallpaper(
+        id: "quiet-current-smooth", title: "Quiet Current · Smooth", filename: "quiet-current-1080p60.mp4",
+        posterFilename: "quiet-current.png", width: 1920, height: 1080, framesPerSecond: 60, duration: 12,
+        isBuiltIn: true
+    )
+    var detail: String {
+        let fps = abs(framesPerSecond - framesPerSecond.rounded()) < 0.005
+            ? String(format: "%.0f", framesPerSecond) : String(format: "%.2f", framesPerSecond)
+        return "\(width) × \(height)  ·  \(fps) fps  ·  silent loop"
+    }
 }
 
 struct AppSettings: Codable {
@@ -27,13 +36,30 @@ struct AppSettings: Codable {
     var selectedID = Wallpaper.quietCurrent.id
     var displayID: UInt32?
     var imported: [Wallpaper] = []
+    var importQuality = VideoQuality.eco
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case energy, enabled, selectedID, displayID, imported, importQuality
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        energy = try values.decodeIfPresent(EnergyPreferences.self, forKey: .energy) ?? EnergyPreferences()
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        selectedID = try values.decodeIfPresent(String.self, forKey: .selectedID) ?? Wallpaper.quietCurrent.id
+        displayID = try values.decodeIfPresent(UInt32.self, forKey: .displayID)
+        imported = try values.decodeIfPresent([Wallpaper].self, forKey: .imported) ?? []
+        importQuality = try values.decodeIfPresent(VideoQuality.self, forKey: .importQuality) ?? .eco
+    }
 }
 
 final class LibraryStore {
     let directory: URL
     private(set) var settings: AppSettings
     private var settingsURL: URL { directory.appendingPathComponent("settings.json") }
-    var wallpapers: [Wallpaper] { [.quietCurrent] + settings.imported }
+    var wallpapers: [Wallpaper] { [.quietCurrent, .quietCurrentSmooth] + settings.imported }
     var selected: Wallpaper { wallpapers.first { $0.id == settings.selectedID } ?? .quietCurrent }
 
     init(directory: URL? = nil) throws {
@@ -89,7 +115,7 @@ enum ImportError: LocalizedError {
 
 enum VideoImporter {
     /// One import at a time. Only a video track is copied; audio never reaches the library.
-    static func importMovie(from source: URL, into directory: URL) async throws -> Wallpaper {
+    static func importMovie(from source: URL, into directory: URL, quality: VideoQuality = .eco) async throws -> Wallpaper {
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
         let asset = AVURLAsset(url: source)
@@ -100,13 +126,11 @@ enum VideoImporter {
         let transform = try await video.load(.preferredTransform)
         let frameRate = try await video.load(.nominalFrameRate)
         let oriented = CGRect(origin: .zero, size: size).applying(transform)
-        guard oriented.width.isFinite, oriented.height.isFinite, oriented.width > 0, oriented.height > 0 else {
+        guard let plan = VideoImportPlan(sourceWidth: oriented.width, sourceHeight: oriented.height,
+                                        sourceFrameRate: Double(frameRate), quality: quality) else {
             throw ImportError.invalidDimensions
         }
-        let scale = min(1, min(1280 / oriented.width, 720 / oriented.height))
-        let width = max(2, Int(oriented.width * scale) / 2 * 2)
-        let height = max(2, Int(oriented.height * scale) / 2 * 2)
-        let fps = frameRate.isFinite ? Int(min(24, max(1, frameRate.rounded()))) : 24
+        let width = plan.width, height = plan.height
 
         let composition = AVMutableComposition()
         guard let track = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
@@ -115,7 +139,10 @@ enum VideoImporter {
         try track.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: video, at: .zero)
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = CGSize(width: width, height: height)
-        videoComposition.frameDuration = CMTime(value: 1, timescale: Int32(fps))
+        videoComposition.frameDuration = CMTime(seconds: 1 / plan.framesPerSecond, preferredTimescale: 600_000)
+        guard videoComposition.frameDuration.isNumeric, videoComposition.frameDuration.value > 0 else {
+            throw ImportError.exportUnavailable
+        }
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
         let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
@@ -136,7 +163,13 @@ enum VideoImporter {
                 try? FileManager.default.removeItem(at: posterURL)
             }
         }
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPreset1280x720) else {
+        let preset: String
+        switch quality {
+        case .eco: preset = AVAssetExportPreset1280x720
+        case .balanced, .smooth: preset = AVAssetExportPreset1920x1080
+        case .ultra: preset = AVAssetExportPresetHEVC3840x2160
+        }
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: preset) else {
             throw ImportError.exportUnavailable
         }
         exporter.videoComposition = videoComposition
@@ -149,9 +182,22 @@ enum VideoImporter {
         guard exporter.status == .completed else {
             throw ImportError.failedExport(exporter.error?.localizedDescription ?? "The export was interrupted.")
         }
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: movieURL))
+        let exportedAsset = AVURLAsset(url: movieURL)
+        guard let exportedTrack = try await exportedAsset.loadTracks(withMediaType: .video).first else { throw ImportError.noVideo }
+        let exportedSize = try await exportedTrack.load(.naturalSize)
+        let exportedFPS = Double(try await exportedTrack.load(.nominalFrameRate))
+        guard exportedSize.width <= CGFloat(quality.maximumWidth), exportedSize.height <= CGFloat(quality.maximumHeight),
+              exportedFPS.isFinite, exportedFPS > 0,
+              abs(exportedFPS - plan.framesPerSecond) <= max(0.1, plan.framesPerSecond * 0.01) else {
+            throw ImportError.failedExport("macOS did not preserve the selected resolution or frame rate.")
+        }
+        let generator = AVAssetImageGenerator(asset: exportedAsset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 640, height: 360)
+        switch quality {
+        case .eco: generator.maximumSize = CGSize(width: 640, height: 360)
+        case .balanced, .smooth: generator.maximumSize = CGSize(width: 1280, height: 720)
+        case .ultra: generator.maximumSize = CGSize(width: 1920, height: 1080)
+        }
         let (image, _) = try await generator.image(at: .zero)
         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
             throw ImportError.exportUnavailable
@@ -160,6 +206,6 @@ enum VideoImporter {
         finished = true
         return Wallpaper(id: id, title: source.deletingPathExtension().lastPathComponent,
                          filename: filename, posterFilename: posterFilename,
-                         width: width, height: height, framesPerSecond: fps, duration: duration.seconds)
+                         width: Int(exportedSize.width), height: Int(exportedSize.height), framesPerSecond: exportedFPS, duration: duration.seconds)
     }
 }

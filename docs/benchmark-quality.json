@@ -1,0 +1,80 @@
+{
+  "test_date": "2026-11-01 (America/New_York)",
+  "app_version": "0.2.0",
+  "hardware": "Apple M2 MacBook Air, 8 GiB RAM",
+  "configuration": "Release build, one display, settings closed, coverage polling disabled for isolated engine measurement. Both overrides use the selected default 720p static poster.",
+  "runs": [
+    {
+      "macOS": "Version 26.6.2 (Build 25G83)",
+      "media": "quiet-current-1080p60.mp4",
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.2374783770368174,
+          "decoder_present": false,
+          "frame_rendered": false,
+          "phase": "wallpaper_off",
+          "physical_footprint_mb": 11.516426086425781,
+          "resident_mb": 63.984375,
+          "seconds": 10.498218958324287
+        },
+        {
+          "cpu_percent_one_core": 3.3387722899315486,
+          "decoder_present": true,
+          "frame_rendered": true,
+          "phase": "playing",
+          "physical_footprint_mb": 19.03209686279297,
+          "resident_mb": 71.1875,
+          "seconds": 20.095051166659687
+        },
+        {
+          "cpu_percent_one_core": 0.04039534142461771,
+          "decoder_present": false,
+          "frame_rendered": false,
+          "phase": "paused_decoder_released",
+          "physical_footprint_mb": 18.45397186279297,
+          "resident_mb": 63.984375,
+          "seconds": 10.49873537500389
+        }
+      ],
+      "scope": "Drift process CPU and memory only; excludes GPU, WindowServer, and system decoder services.",
+      "profile": "smooth",
+      "tested_media": "1920x1080 H.264 at 60 fps; 12-second built-in loop"
+    },
+    {
+      "macOS": "Version 26.6.2 (Build 25G83)",
+      "media": "be345b33-dc22-4f32-b956-88eebe6df1bf.mp4",
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.17655490700137882,
+          "decoder_present": false,
+          "frame_rendered": false,
+          "phase": "wallpaper_off",
+          "physical_footprint_mb": 11.407028198242188,
+          "resident_mb": 63.71875,
+          "seconds": 10.49701779166935
+        },
+        {
+          "cpu_percent_one_core": 3.8985209227424233,
+          "decoder_present": true,
+          "frame_rendered": true,
+          "phase": "playing",
+          "physical_footprint_mb": 19.62580108642578,
+          "resident_mb": 61.359375,
+          "seconds": 20.1072154166759
+        },
+        {
+          "cpu_percent_one_core": 0.011753181194720335,
+          "decoder_present": false,
+          "frame_rendered": false,
+          "phase": "paused_decoder_released",
+          "physical_footprint_mb": 18.328903198242188,
+          "resident_mb": 60.703125,
+          "seconds": 10.499285083380528
+        }
+      ],
+      "scope": "Drift process CPU and memory only; excludes GPU, WindowServer, and system decoder services.",
+      "profile": "ultra",
+      "tested_media": "3840x2160 HEVC at 60 fps; 2-second imported test loop"
+    }
+  ]
+}

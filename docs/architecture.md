@@ -54,16 +54,33 @@ constraints stop that timer.
 Only one import runs at a time, and active wallpaper playback pauses during import.
 The input must have a video track and a duration of 1–300 seconds. A composition copies
 only the video track. Its preferred transform is normalized before scaling to even
-dimensions that fit 1280 × 720. Export frame duration caps the nominal rate at 24 fps.
-The built-in wallpaper uses 15 fps. No audio track is written.
+dimensions within the selected quality limits. `VideoImportPlan` computes those limits
+in the testable core module, without enlarging a small source or increasing its frame rate.
 
-Export uses macOS's 720p AVAssetExportSession preset and a video composition. A poster
-is generated at a maximum of 640 × 360 for imported media. The original input is never
-modified. An incomplete import is cleaned up, and saving a library update is atomic.
+Eco is 1280 × 720 / 24 fps, Balanced is 1920 × 1080 / 30 fps, Smooth is 1920 × 1080 /
+60 fps, and Ultra is 3840 × 2160 / 60 fps. Fractional frame duration uses a 600,000
+timescale so common 1000/1001 cadences do not get rounded to integer frame rates.
+The output track is checked and its actual dimensions and nominal frame rate are
+stored in the library. No audio track is written.
+
+Export uses macOS's H.264 720p or 1080p presets, or the HEVC 4K preset for Ultra, and
+a video composition. Poster limits are 640 × 360 for Eco, 1280 × 720 for Balanced and
+Smooth, and 1920 × 1080 for Ultra. The playback item has no fixed 720p resolution or
+bitrate preference. Its local optimized file determines playback quality.
+
+There are two generated built-in wallpapers: 720p/15 fps and 1080p/60 fps. Quality
+selection applies to future imports; existing optimized media is never silently
+replaced or enlarged. The original input is never modified. An incomplete import is
+cleaned up, and saving a library update is atomic.
+
+Settings decoding supplies Eco when an older library has no quality key. Wallpaper
+frame rates are stored as doubles, which also decode the integer frame rates saved
+by version 0.1.
 
 ## Platform APIs
 
 - [AVPlayerLooper](https://developer.apple.com/documentation/avfoundation/avplayerlooper)
+- [Video export presets](https://developer.apple.com/documentation/avfoundation/export-presets)
 - [NSWindow collection behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct)
 - [Power-source change notifications](https://developer.apple.com/documentation/iokit/1523868-iopsnotificationcreaterunloopsou)
 - [Thermal change notifications](https://developer.apple.com/documentation/foundation/processinfo/thermalstatedidchangenotification)

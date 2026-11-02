@@ -4,7 +4,10 @@ import AVFoundation
 
 let destination = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "Sources/Drift/Resources")
 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-let width = 1280, height = 720, fps: Int32 = 15, frames = 180
+let smooth = CommandLine.arguments.contains("--smooth")
+let width = smooth ? 1920 : 1280, height = smooth ? 1080 : 720
+let fps: Int32 = smooth ? 60 : 15
+let frames = Int(fps) * 12
 let colorspace = CGColorSpaceCreateDeviceRGB()
 
 func color(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor {
@@ -40,13 +43,13 @@ func draw(_ context: CGContext, phase: Double) {
     }
 }
 
-let url = destination.appendingPathComponent("quiet-current.mp4")
+let url = destination.appendingPathComponent(smooth ? "quiet-current-1080p60.mp4" : "quiet-current.mp4")
 if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
 let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
 let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
     AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
-    AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 900_000,
-        AVVideoMaxKeyFrameIntervalKey: 30, AVVideoExpectedSourceFrameRateKey: fps,
+    AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: smooth ? 4_000_000 : 900_000,
+        AVVideoMaxKeyFrameIntervalKey: Int(fps) * 2, AVVideoExpectedSourceFrameRateKey: fps,
         AVVideoAllowFrameReorderingKey: false]
 ])
 input.expectsMediaDataInRealTime = false
@@ -74,7 +77,7 @@ for index in 0..<frames {
             bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorspace,
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue)!
         draw(context, phase: Double(index) / Double(frames) * .pi * 2)
-        if index == 0, let image = context.makeImage() {
+        if index == 0, !smooth, let image = context.makeImage() {
             let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])!
             try png.write(to: destination.appendingPathComponent("quiet-current.png"))
         }
@@ -89,4 +92,4 @@ let finished = DispatchSemaphore(value: 0)
 writer.finishWriting { finished.signal() }
 finished.wait()
 guard writer.status == .completed else { fatalError(writer.error?.localizedDescription ?? "Could not finish the video") }
-print("Generated Quiet Current: 1280x720, 15 fps, 12 seconds")
+print("Generated Quiet Current: \(width)x\(height), \(fps) fps, \(Double(frames) / Double(fps)) seconds")

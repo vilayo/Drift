@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import DriftCore
 
 private extension NSColor {
     static let driftMint = NSColor(srgbRed: 0.53, green: 0.88, blue: 0.78, alpha: 1)
@@ -49,6 +50,8 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
     let preview = PosterPreview(frame: .zero)
     let wallpaperPicker = NSPopUpButton()
     let displayPicker = NSPopUpButton()
+    let qualityPicker = NSPopUpButton()
+    let qualityDescription = NSTextField(wrappingLabelWithString: "")
     let detailLabel = NSTextField(labelWithString: "")
     let statusLabel = NSTextField(labelWithString: "Ready when you are")
     let importButton = NSButton(title: "Import video…", target: nil, action: nil)
@@ -63,7 +66,7 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
     private var displayedPosterID: String?
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 744, height: 704),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 744, height: 764),
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Drift"
         window.titlebarAppearsTransparent = true
@@ -104,7 +107,7 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
         heading.widthAnchor.constraint(equalTo: top.widthAnchor).isActive = true
 
         preview.translatesAutoresizingMaskIntoConstraints = false
-        preview.heightAnchor.constraint(equalToConstant: 222).isActive = true
+        preview.heightAnchor.constraint(equalToConstant: 212).isActive = true
         wallpaperPicker.setContentHuggingPriority(.defaultLow, for: .horizontal)
         wallpaperPicker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         wallpaperPicker.setAccessibilityLabel("Wallpaper")
@@ -114,6 +117,15 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
         useButton.bezelColor = NSColor(srgbRed: 0.23, green: 0.54, blue: 0.46, alpha: 1)
         useButton.keyEquivalent = "\r"
         let selection = row([wallpaperPicker, importButton, removeButton])
+        qualityPicker.setAccessibilityLabel("Import quality")
+        for quality in VideoQuality.allCases {
+            qualityPicker.addItem(withTitle: quality.title)
+            qualityPicker.lastItem?.representedObject = quality.rawValue
+        }
+        qualityPicker.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let qualityRow = row([text("Import quality", size: 12, color: .secondaryLabelColor), qualityPicker])
+        qualityDescription.font = .systemFont(ofSize: 11)
+        qualityDescription.textColor = .secondaryLabelColor
         detailLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         detailLabel.textColor = .secondaryLabelColor
         statusLabel.font = .systemFont(ofSize: 12); statusLabel.textColor = .driftMint
@@ -128,8 +140,8 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
         let displayRow = row([text("Display", size: 12, color: .secondaryLabelColor), displayPicker])
         loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let protections = text("Always rests during Low Power Mode, heat, memory pressure, low battery, screen lock, and sleep.", size: 11, color: .secondaryLabelColor)
-        let local = text("Your videos stay on this Mac. Imports are optimized to 720p at up to 24 fps.", size: 11, color: .tertiaryLabelColor)
-        let stack = NSStackView(views: [top, preview, selection, detailLabel, actions, separator, savingsTitle,
+        let local = text("Quality applies to new imports. Reimport the original to improve an existing wallpaper.", size: 11, color: .tertiaryLabelColor)
+        let stack = NSStackView(views: [top, preview, selection, detailLabel, qualityRow, qualityDescription, actions, separator, savingsTitle,
                                         savingsDetail, displayRow, batteryToggle, coveredToggle, loginToggle, protections, local])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.setCustomSpacing(18, after: top)
@@ -142,10 +154,10 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -22)
         ])
-        for view in [top, preview, selection, actions, separator, displayRow] {
+        for view in [top, preview, selection, qualityRow, actions, separator, displayRow] {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
-        for view in [subtitle, savingsDetail, protections, local] {
+        for view in [subtitle, qualityDescription, savingsDetail, protections, local] {
             view.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor).isActive = true
         }
     }
@@ -173,6 +185,11 @@ final class PreferencesWindow: NSWindowController, NSWindowDelegate {
         useButton.isEnabled = !store.settings.enabled && !importing
         importButton.isEnabled = !importing
         wallpaperPicker.isEnabled = !importing
+        qualityPicker.isEnabled = !importing
+        if let item = qualityPicker.itemArray.first(where: { $0.representedObject as? String == store.settings.importQuality.rawValue }) {
+            qualityPicker.select(item)
+        }
+        qualityDescription.stringValue = store.settings.importQuality.explanation
         removeButton.isEnabled = !selected.isBuiltIn && !importing
         batteryToggle.state = store.settings.energy.pauseOnBattery ? .on : .off
         coveredToggle.state = store.settings.energy.pauseWhenCovered ? .on : .off

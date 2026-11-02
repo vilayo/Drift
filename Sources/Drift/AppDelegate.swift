@@ -36,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             store = try LibraryStore(directory: directory)
         } catch {
+            if argsContains("--data-directory") && (smokeTest || argsContains("--benchmark") || argsContains("--import-smoke-test")) {
+                fputs("DIAGNOSTIC_FAIL could not load library: \(error)\n", stderr); exit(1)
+            }
             showError("Drift could not open its library: \(error.localizedDescription)")
             NSApp.terminate(nil); return
         }
@@ -53,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runningDiagnostic = smokeTest || argsContains("--benchmark") || argsContains("--import-smoke-test")
         if argsContains("--benchmark") {
             guard argsContains("--data-directory"), let screen else { fputs("BENCHMARK_FAIL requires --data-directory and a display\n", stderr); exit(1) }
-            benchmark = Benchmark(engine: engine, store: store, screen: screen)
+            benchmark = Benchmark(engine: engine, store: store, screen: screen, movieURL: diagnosticMovieURL())
             benchmark?.run { NSApp.terminate(nil) }
         } else if argsContains("--import-smoke-test") {
             runImportSmokeTest()
@@ -155,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             bind(panel.removeButton, #selector(removeWallpaper(_:)))
             bind(panel.wallpaperPicker, #selector(selectWallpaper(_:)))
             bind(panel.displayPicker, #selector(selectDisplay(_:)))
+            bind(panel.qualityPicker, #selector(selectQuality(_:)))
             bind(panel.batteryToggle, #selector(updateEnergy(_:)))
             bind(panel.coveredToggle, #selector(updateEnergy(_:)))
             bind(panel.loginToggle, #selector(updateLogin(_:)))
@@ -190,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func selectDisplay(_ sender: NSPopUpButton) {
         if save({ $0.displayID = sender.selectedItem?.representedObject as? UInt32 }) { evaluate() }
     }
+    @objc private func selectQuality(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String, let quality = VideoQuality(rawValue: raw) else { return }
+        if save({ $0.importQuality = quality }) { evaluate() }
+    }
 
     @objc private func updateLogin(_ sender: NSButton) {
         do {
@@ -207,11 +215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         picker.allowsMultipleSelection = false; picker.canChooseDirectories = false
         picker.message = "Choose a video loop. Drift keeps an optimized, silent copy on this Mac."
         guard picker.runModal() == .OK, let url = picker.url else { return }
+        let quality = store.settings.importQuality
         importing = true; evaluate()
         Task { @MainActor in
             defer { importing = false; evaluate() }
             do {
-                let wallpaper = try await VideoImporter.importMovie(from: url, into: store.directory)
+                let wallpaper = try await VideoImporter.importMovie(from: url, into: store.directory, quality: quality)
                 if !save({ $0.imported.append(wallpaper); $0.selectedID = wallpaper.id }) {
                     try? FileManager.default.removeItem(at: store.movieURL(for: wallpaper))
                     try? FileManager.default.removeItem(at: store.posterURL(for: wallpaper))
@@ -242,21 +251,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { @MainActor in
             do {
                 let args = CommandLine.arguments
+                let quality = diagnosticQuality()
                 var source = store.movieURL(for: .quietCurrent)
                 if let index = args.firstIndex(of: "--import-smoke-test"), args.indices.contains(index + 1), !args[index + 1].hasPrefix("--") {
                     source = URL(fileURLWithPath: args[index + 1])
                 }
-                let wallpaper = try await VideoImporter.importMovie(from: source, into: store.directory)
+                let sourceAsset = AVURLAsset(url: source)
+                guard let sourceTrack = try await sourceAsset.loadTracks(withMediaType: .video).first else { throw ImportError.noVideo }
+                let sourceSize = try await sourceTrack.load(.naturalSize)
+                let sourceTransform = try await sourceTrack.load(.preferredTransform)
+                let sourceFPS = try await sourceTrack.load(.nominalFrameRate)
+                let oriented = CGRect(origin: .zero, size: sourceSize).applying(sourceTransform)
+                guard let plan = VideoImportPlan(sourceWidth: oriented.width, sourceHeight: oriented.height,
+                                                sourceFrameRate: Double(sourceFPS), quality: quality) else { throw ImportError.invalidDimensions }
+                let wallpaper = try await VideoImporter.importMovie(from: source, into: store.directory, quality: quality)
                 let asset = AVURLAsset(url: store.movieURL(for: wallpaper))
                 let audioCount = try await asset.loadTracks(withMediaType: .audio).count
                 let video = try await asset.loadTracks(withMediaType: .video).first!
                 let size = try await video.load(.naturalSize)
                 let fps = try await video.load(.nominalFrameRate)
-                guard audioCount == 0, size.width <= 1280, size.height <= 720, fps <= 24.1,
+                guard audioCount == 0, abs(size.width - CGFloat(plan.width)) <= 2, abs(size.height - CGFloat(plan.height)) <= 2,
+                      abs(Double(fps) - plan.framesPerSecond) <= max(0.1, plan.framesPerSecond * 0.01),
                       FileManager.default.fileExists(atPath: store.posterURL(for: wallpaper).path) else {
                     throw ImportError.exportUnavailable
                 }
-                print("IMPORT_SMOKE_PASS \(Int(size.width))x\(Int(size.height)) \(fps)fps audio=\(audioCount)")
+                print("IMPORT_SMOKE_PASS quality=\(quality.rawValue) \(Int(size.width))x\(Int(size.height)) \(fps)fps audio=\(audioCount)")
                 NSApp.terminate(nil)
             } catch { fputs("IMPORT_SMOKE_FAIL \(error)\n", stderr); exit(1) }
         }
@@ -267,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Isolated test directory is required: never change the user's saved library during this test.
         guard argsContains("--data-directory") else { fputs("SMOKE_FAIL use --data-directory\n", stderr); exit(1) }
         engine.show(posterURL: store.posterURL(for: .quietCurrent), on: screen)
-        engine.play(url: store.movieURL(for: .quietCurrent))
+        engine.play(url: diagnosticMovieURL() ?? store.movieURL(for: .quietCurrentSmooth))
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [self] in
             guard engine.hasDecoder, engine.hasRenderedFrame else {
                 fputs("SMOKE_FAIL no rendered video frame: \(playbackError ?? "unknown error")\n", stderr); exit(1)
@@ -279,6 +298,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Keep the run loop alive through repeated close/open cycles to catch window lifetime bugs.
             runWindowCycles(remaining: 8, screen: screen)
         }
+    }
+
+    private func diagnosticQuality() -> VideoQuality {
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--quality"), args.indices.contains(index + 1) {
+            guard let quality = VideoQuality(rawValue: args[index + 1]) else {
+                fputs("Unknown --quality. Use eco, balanced, smooth, or ultra.\n", stderr); exit(1)
+            }
+            return quality
+        }
+        return store.settings.importQuality
+    }
+
+    private func diagnosticMovieURL() -> URL? {
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--video"), args.indices.contains(index + 1) {
+            return URL(fileURLWithPath: args[index + 1])
+        }
+        return nil
     }
 
     private func runWindowCycles(remaining: Int, screen: NSScreen) {

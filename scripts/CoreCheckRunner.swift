@@ -33,7 +33,16 @@ func XCTAssertNil<T>(_ value: T?, file: StaticString = #filePath, line: UInt = #
             ("overlap union", { CoverageTests().testTwoOverlappingHalfWindowsDoNotHideTheWholeDesktop() }),
             ("split view", { CoverageTests().testSplitViewCoversDesktop() }),
             ("multiple display clipping", { CoverageTests().testOtherDisplayAndOutOfBoundsWindowsAreClipped() }),
-            ("empty coverage", { CoverageTests().testEmptyAndInvalidScreens() })
+            ("empty coverage", { CoverageTests().testEmptyAndInvalidScreens() }),
+            ("all quality ceilings", { VideoQualityTests().testAllQualityLimits() }),
+            ("no resolution upscaling", { VideoQualityTests().testLowResolutionSourceIsNotUpscaled() }),
+            ("fractional frame rate", { VideoQualityTests().testFractionalFrameRateIsPreserved() }),
+            ("no frame duplication", { VideoQualityTests().testThirtyFPSIsNotPromotedToSixty() }),
+            ("slow source cadence", { VideoQualityTests().testSlowSourceIsNotPromotedToSixty() }),
+            ("portrait import plan", { VideoQualityTests().testPortraitKeepsAspectAndEvenDimensions() }),
+            ("invalid video dimensions", { VideoQualityTests().testInvalidDimensionsAreRejected() }),
+            ("unknown video frame rate", { VideoQualityTests().testUnknownFrameRateFallsBackToQualityCeiling() }),
+            ("quality persistence", { try VideoQualityTests().testQualityPreferenceRoundTrip() })
         ]
         for (name, check) in checks {
             let before = failureCount
